@@ -1,7 +1,6 @@
 """Gmail tap class."""
 
-from typing import List
-
+from typing import List, Any
 from singer_sdk import Stream, Tap
 from singer_sdk import typing as th  # JSON schema typing helpers
 
@@ -43,7 +42,15 @@ class TapGmail(Tap):
             default=False,
         ),
     ).to_dict()
-
+    
+    def load_state(self, state: dict[str, Any]) -> None:
+        #Since MessageStream is child and it contains the state to apply to MessageListStream, we extract the replication_key_value here to bypass this limitation
+        super().load_state(state)
+        if state != {}:
+            self.replication_key_value = state["bookmarks"]["messages"]["progress_markers"]["replication_key_value"] 
+        else:
+            self.replication_key_value = None
+        
     def discover_streams(self) -> List[Stream]:
         """Return a list of discovered streams."""
         return [stream_class(tap=self) for stream_class in STREAM_TYPES]

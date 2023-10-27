@@ -32,14 +32,18 @@ class MessageListStream(GmailStream):
     ) -> Dict[str, Any]:
         params = super().get_url_params(context, next_page_token)
         params["includeSpamTrash"]=self.config["messages.include_spam_trash"]
-        params["q"]=self.config.get("messages", {}).get("q")
+
+        params["q"] = self.config.get("messages", {}).get("q","")
+        if self._tap.replication_key_value != None:
+            params["q"]+= f" after:{str(int(self._tap.replication_key_value)/1000)}"
         return params
 
 
 class MessagesStream(GmailStream):
 
     name = "messages"
-    replication_key = None
+    replication_key = "internalDate"
+    primary_keys = ["id"]
     schema_filepath = SCHEMAS_DIR / "messages.json"
     parent_stream_type = MessageListStream
     ignore_parent_replication_keys = True
