@@ -11,7 +11,7 @@ SCHEMAS_DIR = Path(__file__).parent / Path("./schemas")
 class MessageListStream(GmailStream):
     """Define custom stream."""
 
-    name = "message_list"
+    name = "email_message_list"
     primary_keys = ["id"]
     replication_key = None
     schema_filepath = SCHEMAS_DIR / "message_list.json"
@@ -41,7 +41,7 @@ class MessageListStream(GmailStream):
 
 class MessagesStream(GmailStream):
 
-    name = "messages"
+    name = "email_messages"
     replication_key = "internalDate"
     primary_keys = ["id"]
     schema_filepath = SCHEMAS_DIR / "messages.json"
