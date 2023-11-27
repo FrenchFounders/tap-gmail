@@ -1,5 +1,5 @@
 """Stream type classes for tap-gmail."""
-import json
+
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -56,6 +56,6 @@ class MessagesStream(GmailStream):
 
     def post_process(self, row: dict, context: dict):
         payload = row.pop('payload')
-        row['headers'] = json.loads(payload['headers'])
+        row['headers'] = payload['headers']
 
         return row
