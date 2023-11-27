@@ -47,7 +47,7 @@ class TapGmail(Tap):
         #Since MessageStream is child and it contains the state to apply to MessageListStream, we extract the replication_key_value here to bypass this limitation
         super().load_state(state)
         if state != {}:
-            self.replication_key_value = state["bookmarks"]["messages"]["progress_markers"]["replication_key_value"] 
+            self.replication_key_value = state["bookmarks"]["gmail_messages"]["progress_markers"]["replication_key_value"]
         else:
             self.replication_key_value = None
         
