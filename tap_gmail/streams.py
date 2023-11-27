@@ -53,3 +53,9 @@ class MessagesStream(GmailStream):
     def path(self):
         """Set the path for the stream."""
         return "/gmail/v1/users/" + self.config["user_id"] + "/messages/{message_id}"
+
+    def post_process(self, row: dict, context: dict):
+        payload = row.pop('payload')
+        row['headers'] = payload['headers']
+
+        return row

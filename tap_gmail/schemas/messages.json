@@ -28,7 +28,7 @@
       "type": "string",
       "description": "The internal message creation timestamp (epoch ms), which determines ordering in the inbox. For normal SMTP-received email, this represents the time the message was originally accepted by Google, which is more reliable than the Date header. However, for API-migrated mail, it can be configured by client to be based on the Date header."
     },
-    "payload": { "$ref": "#/definitions/message_part" },
+    "headers": { "$ref": "#/definitions/headers" },
     "sizeEstimate": {
       "type": "integer",
       "description": "Estimated size in bytes of the message."
@@ -39,18 +39,31 @@
     }
   },
   "definitions": {
-    "header": {
+    "message_part": {
       "type": "object",
       "properties": {
-        "name": {
+        "partId": {
           "type": "string",
-          "description": "The name of the header before the : separator. For example, To."
+          "description": "The immutable ID of the message part."
         },
-        "value": {
+        "mimeType": {
           "type": "string",
-          "description": "The value of the header after the : separator. For example, someuser@example.com."
+          "description": "The MIME type of the message part."
+        },
+        "filename": {
+          "type": "string",
+          "description": "The filename of the attachment. Only present if this message part represents an attachment."
+        },
+        "body": { "$ref": "#/definitions/message_part_body" },
+        "headers": { "$ref": "#/definitions/headers" },
+        "parts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/message_part"
+          }
         }
-      }
+      },
+      "description": "A single MIME message part."
     },
     "message_part_body": {
       "type": "object",
@@ -70,35 +83,23 @@
       },
       "description": "The message part body for this part, which may be empty for container MIME message parts."
     },
-    "message_part": {
+    "headers": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/header" },
+      "description": "List of headers on this message part. For the top-level message part, representing the entire message payload, it will contain the standard RFC 2822 email headers such as To, From, and Subject."
+    },
+    "header": {
       "type": "object",
       "properties": {
-        "partId": {
+        "name": {
           "type": "string",
-          "description": "The immutable ID of the message part."
+          "description": "The name of the header before the : separator. For example, To."
         },
-        "mimeType": {
+        "value": {
           "type": "string",
-          "description": "The MIME type of the message part."
-        },
-        "filename": {
-          "type": "string",
-          "description": "The filename of the attachment. Only present if this message part represents an attachment."
-        },
-        "headers": {
-          "type": "array",
-          "items": { "$ref": "#/definitions/header" },
-          "description": "List of headers on this message part. For the top-level message part, representing the entire message payload, it will contain the standard RFC 2822 email headers such as To, From, and Subject."
-        },
-        "body": { "$ref": "#/definitions/message_part_body" },
-        "parts": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/message_part"
-          }
+          "description": "The value of the header after the : separator. For example, someuser@example.com."
         }
-      },
-      "description": "A single MIME message part."
+      }
     }
   }
 }
