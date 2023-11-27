@@ -10,8 +10,8 @@
       "description": "The ID of the thread the message belongs to."
     },
     "labelIds": {
-      "description": "List of IDs of labels applied to this message.",
       "type": "array",
+      "description": "List of IDs of labels applied to this message.",
       "items": {
         "type": "string"
       }
@@ -30,8 +30,20 @@
     },
     "headers": {
       "type": "array",
-      "items": { "$ref": "#/definitions/header" },
-      "description": "List of headers on this message part. For the top-level message part, representing the entire message payload, it will contain the standard RFC 2822 email headers such as To, From, and Subject."
+      "description": "List of headers on this message part. For the top-level message part, representing the entire message payload, it will contain the standard RFC 2822 email headers such as To, From, and Subject.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The name of the header before the : separator. For example, To."
+          },
+          "value": {
+            "type": "string",
+            "description": "The value of the header after the : separator. For example, someuser@example.com."
+          }
+        }
+      }
     },
     "sizeEstimate": {
       "type": "integer",
