@@ -1,6 +1,6 @@
 """Gmail tap class."""
 
-from typing import List, Any
+from typing import Dict, List, Any, Optional
 from singer_sdk import Stream, Tap
 from singer_sdk import typing as th  # JSON schema typing helpers
 from singer_sdk._singerlib import Catalog, StateMessage, write_message
@@ -9,6 +9,13 @@ from tap_gmail.streams import GmailStream, MessageListStream, MessagesStream
 
 STREAM_TYPES = [MessageListStream, MessagesStream]
 
+def is_correct_state(state: Dict[str, Any]):
+    return (
+            state != {}
+            and "gmail_messages" in state["bookmarks"]
+            and state["bookmarks"]["gmail_messages"] != {}
+            and "gmail_message_list" in state["bookmarks"]
+        )
 
 class TapGmail(Tap):
     """Gmail tap class."""
@@ -48,17 +55,12 @@ class TapGmail(Tap):
         # Since MessageStream is child and it contains the state to apply to MessageListStream, we extract the replication_key_value here to bypass this limitation
         super().load_state(state)
         self.logger.info(state)
-        if (
-            state != {}
-            and "gmail_messages" in state["bookmarks"]
-            and state != {"bookmarks": {"gmail_message_list": {}, "gmail_messages": {}}}
-        ):
+        if is_correct_state(state):
             if "progress_markers" not in state["bookmarks"]["gmail_messages"]:
                 self.replication_key_value = state["bookmarks"]["gmail_messages"]["replication_key_value"]
-                write_message(StateMessage(state))
             else:
                 self.replication_key_value = state["bookmarks"]["gmail_messages"]["progress_markers"]["replication_key_value"]
-                write_message(StateMessage(state))
+            write_message(StateMessage(state))
         else:
             self.replication_key_value = None
         
