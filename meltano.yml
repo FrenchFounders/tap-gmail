@@ -12,9 +12,13 @@ plugins:
     - discover
     settings:
     - name: oauth_credentials.client_id
+      kind: password
     - name: oauth_credentials.client_secret
+      kind: password
     - name: oauth_credentials.refresh_token
+      kind: password
     - name: user_id
+      kind: password
     select:
     - messages.*
   loaders:

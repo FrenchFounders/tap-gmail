@@ -3,6 +3,7 @@
 from typing import List, Any
 from singer_sdk import Stream, Tap
 from singer_sdk import typing as th  # JSON schema typing helpers
+from singer_sdk._singerlib import Catalog, StateMessage, write_message
 
 from tap_gmail.streams import GmailStream, MessageListStream, MessagesStream
 
@@ -44,10 +45,20 @@ class TapGmail(Tap):
     ).to_dict()
     
     def load_state(self, state: dict[str, Any]) -> None:
-        #Since MessageStream is child and it contains the state to apply to MessageListStream, we extract the replication_key_value here to bypass this limitation
+        # Since MessageStream is child and it contains the state to apply to MessageListStream, we extract the replication_key_value here to bypass this limitation
         super().load_state(state)
-        if state != {}:
-            self.replication_key_value = state["bookmarks"]["gmail_messages"]["progress_markers"]["replication_key_value"]
+        self.logger.info(state)
+        if (
+            state != {}
+            and "gmail_messages" in state["bookmarks"]
+            and state != {"bookmarks": {"gmail_message_list": {}, "gmail_messages": {}}}
+        ):
+            if "progress_markers" not in state["bookmarks"]["gmail_messages"]:
+                self.replication_key_value = state["bookmarks"]["gmail_messages"]["replication_key_value"]
+                write_message(StateMessage(state))
+            else:
+                self.replication_key_value = state["bookmarks"]["gmail_messages"]["progress_markers"]["replication_key_value"]
+                write_message(StateMessage(state))
         else:
             self.replication_key_value = None
         
