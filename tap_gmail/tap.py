@@ -30,11 +30,13 @@ class TapGmail(Tap):
         th.Property(
             "oauth_credentials.client_secret",
             th.StringType,
+            secret=True,
             description="Your google client_secret",
         ),
         th.Property(
             "oauth_credentials.refresh_token",
             th.StringType,
+            secret=True,
             description="Your google refresh token",
         ),
         th.Property(
