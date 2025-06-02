@@ -57,5 +57,6 @@ class MessagesStream(GmailStream):
     def post_process(self, row: dict, context: dict):
         payload = row.pop('payload')
         row['headers'] = payload['headers']
+        row['user_id'] = self.config["user_id"]
 
         return row
