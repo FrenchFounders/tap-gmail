@@ -16,6 +16,10 @@
         "type": "string"
       }
     },
+    "user_id": {
+      "type": "string",
+      "description": "The ID of the thread the message belongs to."
+    },
     "snippet": {
       "type": "string",
       "description": "A short part of the message text."
