@@ -1,61 +1,109 @@
 """REST client handling, including GmailStream base class."""
 
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Union
+from typing import Any, Optional
 
 import requests
-from memoization import cached
-from singer_sdk.helpers.jsonpath import extract_jsonpath
 from singer_sdk.streams import RESTStream
 
-from tap_gmail.auth import GmailAuthenticator
+from tap_gmail.auth import (
+    DIRECTORY_SCOPES,
+    GMAIL_SCOPES,
+    GmailAuthenticator,
+)
 
 SCHEMAS_DIR = Path(__file__).parent / Path("./schemas")
 
 
-class GmailStream(RESTStream):
-    """Gmail stream class."""
+class GoogleAPIStream(RESTStream):
+    """Base stream for any Google API call using the service account.
 
-    url_base = "https://gmail.googleapis.com"
+    The impersonated subject depends on context (the admin for the
+    Directory API, the end user for the Gmail API) so we resolve the
+    authenticator per request rather than via the standard
+    ``authenticator`` property — but we still use the Singer SDK
+    ``OAuthJWTAuthenticator`` machinery via ``auth_headers``.
+    """
 
-    @property
-    @cached
-    def authenticator(self) -> GmailAuthenticator:
-        """Return a new authenticator object."""
-        return GmailAuthenticator.create_for_stream(self)
+    #: OAuth scopes required by the subclass.
+    scopes: tuple = ()
 
     @property
     def http_headers(self) -> dict:
-        """Return the http headers needed."""
         headers = {}
         if "user_agent" in self.config:
             headers["User-Agent"] = self.config.get("user_agent")
         return headers
 
-    def get_next_page_token(
-        self, response: requests.Response, previous_token: Optional[Any]
-    ) -> Optional[Any]:
-        """Return a token for identifying next page or None if no more pages."""
-        if self.next_page_token_jsonpath:
-            all_matches = extract_jsonpath(
-                self.next_page_token_jsonpath, response.json()
-            )
-            first_match = next(iter(all_matches), None)
-            next_page_token = first_match
-        else:
-            next_page_token = None
+    @property
+    def authenticator(self):
+        # Disabled: the impersonated subject is context-dependent, so
+        # the authenticator is resolved in ``prepare_request`` below.
+        return None
 
-        return next_page_token
+    def get_impersonated_subject(self, context: Optional[dict]) -> str:
+        """Return the email of the user to impersonate for this request."""
+        raise NotImplementedError
 
-    def get_url_params(
+    def prepare_request(
         self, context: Optional[dict], next_page_token: Optional[Any]
-    ) -> Dict[str, Any]:
-        """Return a dictionary of values to be used in URL parameterization."""
-        params: dict = {}
-        if next_page_token:
-            params["pageToken"] = next_page_token
-        return params
+    ) -> requests.PreparedRequest:
+        request = super().prepare_request(context, next_page_token)
+        subject = self.get_impersonated_subject(context)
+        authenticator = GmailAuthenticator.create_for_subject(
+            stream=self,
+            subject=subject,
+            scopes=self.scopes,
+        )
+        # ``auth_headers`` triggers ``update_access_token`` if the
+        # cached token is expired — full framework lifecycle, no
+        # bespoke refresh logic.
+        request.headers.update(authenticator.auth_headers)
+        return request
 
-    def parse_response(self, response: requests.Response) -> Iterable[dict]:
-        """Parse the response and return an iterator of result rows."""
-        yield from extract_jsonpath(self.records_jsonpath, input=response.json())
+    def validate_response(
+        self, response: requests.Response, context=None
+    ) -> None:
+        # Surface the Google response body on 4xx — the default Singer
+        # SDK error message only carries the HTTP status, which makes
+        # debugging Google's authorization layer painful.
+        if 400 <= response.status_code < 500:
+            body = response.text[:1000] if response.text else "<empty>"
+            self.logger.error(
+                "Google API %s on %s: %s",
+                response.status_code,
+                response.request.url if response.request else response.url,
+                body,
+            )
+        return super().validate_response(response)
+
+
+class GmailStream(GoogleAPIStream):
+    """Stream class for endpoints under the Gmail API."""
+
+    url_base = "https://gmail.googleapis.com"
+    scopes = GMAIL_SCOPES
+
+    def get_impersonated_subject(self, context: Optional[dict]) -> str:
+        if not context or "user_email" not in context:
+            raise RuntimeError(
+                "GmailStream requires a context with 'user_email' "
+                "(provided by the parent UsersStream)."
+            )
+        return context["user_email"]
+
+
+class DirectoryStream(GoogleAPIStream):
+    """Stream class for the Admin SDK Directory API."""
+
+    url_base = "https://admin.googleapis.com/admin/directory/v1"
+    scopes = DIRECTORY_SCOPES
+
+    def get_impersonated_subject(self, context: Optional[dict]) -> str:
+        admin_email = self.config.get("delegated_admin_email")
+        if not admin_email:
+            raise RuntimeError(
+                "delegated_admin_email must be configured to call the "
+                "Admin SDK Directory API."
+            )
+        return admin_email

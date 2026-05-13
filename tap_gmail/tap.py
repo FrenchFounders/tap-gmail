@@ -1,21 +1,18 @@
 """Gmail tap class."""
 
-from typing import Dict, List, Any, Optional
+from typing import List
+
 from singer_sdk import Stream, Tap
 from singer_sdk import typing as th  # JSON schema typing helpers
-from singer_sdk._singerlib import Catalog, StateMessage, write_message
 
-from tap_gmail.streams import GmailStream, MessageListStream, MessagesStream
+from tap_gmail.streams import MessageListStream, MessagesStream, UsersStream
 
-STREAM_TYPES = [MessageListStream, MessagesStream]
+STREAM_TYPES = [
+    UsersStream,
+    MessageListStream,
+    MessagesStream,
+]
 
-def is_correct_state(state: Dict[str, Any]):
-    return (
-            state != {}
-            and "gmail_messages" in state["bookmarks"]
-            and state["bookmarks"]["gmail_messages"] != {}
-            and "gmail_message_list" in state["bookmarks"]
-        )
 
 class TapGmail(Tap):
     """Gmail tap class."""
@@ -23,53 +20,64 @@ class TapGmail(Tap):
     name = "tap-gmail"
     config_jsonschema = th.PropertiesList(
         th.Property(
-            "oauth_credentials.client_id",
-            th.StringType,
-            description="Your google client_id",
-        ),
-        th.Property(
-            "oauth_credentials.client_secret",
+            "service_account_credentials",
             th.StringType,
             secret=True,
-            description="Your google client_secret",
+            required=True,
+            description=(
+                "JSON content of the Google service account key. The "
+                "service account must have Domain-Wide Delegation "
+                "enabled with the scopes "
+                "'admin.directory.user.readonly' and 'gmail.readonly'."
+            ),
         ),
         th.Property(
-            "oauth_credentials.refresh_token",
+            "delegated_admin_email",
             th.StringType,
-            secret=True,
-            description="Your google refresh token",
+            required=True,
+            description=(
+                "Email of a Google Workspace admin used to impersonate "
+                "when calling the Admin SDK Directory API to list users."
+            ),
+        ),
+        th.Property(
+            "excluded_user_emails",
+            th.ArrayType(th.StringType),
+            default=[],
+            description=(
+                "List of user emails to exclude from sync (e.g. shared "
+                "mailboxes, system accounts, former employees). "
+                "Matching is case-insensitive."
+            ),
+        ),
+        th.Property(
+            "start_date",
+            th.StringType,
+            description=(
+                "RFC3339 lower bound applied as ``q=after:<epoch>`` on "
+                "the initial full sync of each user (until an "
+                "internalDate bookmark exists). Optional: if omitted, "
+                "the first run pulls every message the user has."
+            ),
         ),
         th.Property(
             "messages.q",
             th.StringType,
-            description="Only return messages matching the specified query. Supports the same query format as the Gmail search box. For example, \"from:someuser@example.com rfc822msgid:<somemsgid@example.com> is:unread\". Parameter cannot be used when accessing the api using the gmail.metadata scope. https://developers.google.com/gmail/api/reference/rest/v1/users.messages/list#query-parameters",
-        ),
-        th.Property(
-            "user_id", 
-            th.StringType, 
-            description="Your Gmail User ID"
+            description=(
+                "Extra Gmail search query appended to every "
+                "users.messages.list call. Same format as the Gmail "
+                "search box. See "
+                "https://developers.google.com/gmail/api/reference/rest/v1/users.messages/list#query-parameters"
+            ),
         ),
         th.Property(
             "messages.include_spam_trash",
             th.BooleanType,
-            description="Include messages from SPAM and TRASH in the results.",
             default=False,
+            description="Include messages from SPAM and TRASH in the results.",
         ),
     ).to_dict()
-    
-    def load_state(self, state: dict[str, Any]) -> None:
-        # Since MessageStream is child and it contains the state to apply to MessageListStream, we extract the replication_key_value here to bypass this limitation
-        super().load_state(state)
-        self.logger.info(state)
-        if is_correct_state(state):
-            if "progress_markers" not in state["bookmarks"]["gmail_messages"]:
-                self.replication_key_value = state["bookmarks"]["gmail_messages"]["replication_key_value"]
-            else:
-                self.replication_key_value = state["bookmarks"]["gmail_messages"]["progress_markers"]["replication_key_value"]
-            write_message(StateMessage(state))
-        else:
-            self.replication_key_value = None
-        
+
     def discover_streams(self) -> List[Stream]:
         """Return a list of discovered streams."""
         return [stream_class(tap=self) for stream_class in STREAM_TYPES]

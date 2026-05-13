@@ -8,6 +8,14 @@
     "threadId": {
       "type": "string",
       "description": "The ID of the thread the message belongs to."
+    },
+    "user_id": {
+      "type": "string",
+      "description": "The Google ID of the Workspace user this message belongs to."
+    },
+    "user_email": {
+      "type": "string",
+      "description": "The primary email of the Workspace user this message belongs to."
     }
   }
 }

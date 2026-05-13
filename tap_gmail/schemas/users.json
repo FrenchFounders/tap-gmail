@@ -1,0 +1,21 @@
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "The unique Google ID of the user."
+    },
+    "primaryEmail": {
+      "type": "string",
+      "description": "The primary email address of the user."
+    },
+    "suspended": {
+      "type": "boolean",
+      "description": "Whether the user is suspended."
+    },
+    "archived": {
+      "type": "boolean",
+      "description": "Whether the user is archived."
+    }
+  }
+}
