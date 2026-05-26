@@ -1,9 +1,11 @@
 """REST client handling, including GmailStream base class."""
 
+import time
 from pathlib import Path
 from typing import Any, Optional
 
 import requests
+from singer_sdk.exceptions import FatalAPIError
 from singer_sdk.streams import RESTStream
 
 from tap_gmail.auth import (
@@ -75,6 +77,10 @@ class GoogleAPIStream(RESTStream):
                 response.request.url if response.request else response.url,
                 body,
             )
+
+        if response.status_code == 429:
+            raise FatalAPIError(f"Google rate-limit (429): {response.text[:500]}")
+
         return super().validate_response(response)
 
 
@@ -83,6 +89,13 @@ class GmailStream(GoogleAPIStream):
 
     url_base = "https://gmail.googleapis.com"
     scopes = GMAIL_SCOPES
+
+    # 200 ms between requests → ≤ 300 req/min even at minimum API latency.
+    _THROTTLE_SECONDS = 0.2
+
+    def _request(self, prepared_request, context=None):
+        time.sleep(self._THROTTLE_SECONDS)
+        return super()._request(prepared_request, context)
 
     def get_impersonated_subject(self, context: Optional[dict]) -> str:
         if not context or "user_email" not in context:
