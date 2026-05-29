@@ -1,8 +1,12 @@
 """Stream type classes for tap-gmail."""
 
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional
+
+from singer_sdk.helpers._state import PROGRESS_MARKER_NOTE, PROGRESS_MARKERS
+from singer_sdk.streams.core import REPLICATION_INCREMENTAL
 
 from tap_gmail.client import DirectoryStream, GmailStream
 
@@ -195,15 +199,73 @@ class MessagesStream(GmailStream):
     ignore_parent_replication_key = True
     state_partitioning_keys = ["user_id"]
 
-    # ``internalDate`` is a stringified epoch ms — Gmail returns
-    # messages newest-first, so the default sorted-check would
-    # complain. We rely on ``replication_method = INCREMENTAL`` +
-    # the SDK's max-tracking to advance the bookmark monotonically.
+    # ``internalDate`` is a stringified epoch ms. Gmail returns messages
+    # newest-first. ``check_sorted=False`` disables the SDK sort-order
+    # assertion (which would raise on descending data). MAX tracking is
+    # implemented in our ``_increment_stream_state`` override: the default
+    # SDK behaviour with ``check_sorted=False`` tracks the *last* value
+    # written (= oldest message), not the maximum, which would leave the
+    # bookmark permanently stuck at the initial date.
     check_sorted = False
 
     @property
     def path(self) -> str:
         return "/gmail/v1/users/me/messages/{message_id}"
+
+    def _increment_stream_state(
+        self,
+        latest_record: dict,
+        *,
+        context: Optional[dict] = None,
+    ) -> None:
+        """Track MAX ``internalDate`` per user partition.
+
+        Gmail returns messages newest-first.  The default Singer SDK behaviour
+        with ``check_sorted=False`` unconditionally overwrites
+        ``progress_markers["replication_key_value"]`` on every record, so after
+        processing a full inbox the bookmark ends up at the *oldest* message
+        date (the last record written = Jan 2024), never advancing.
+
+        We shadow the SDK method to perform MAX tracking instead: the bookmark
+        only moves forward, regardless of message order.
+        """
+        if self.replication_method != REPLICATION_INCREMENTAL or not self.replication_key:
+            return
+
+        state_dict = self.get_context_state(context)
+
+        new_value = latest_record.get(self.replication_key)
+        if new_value is None:
+            return
+
+        # Use progress_markers (non-resumable if interrupted), consistent with
+        # ``check_sorted=False``, but update only when new_value > current max.
+        if PROGRESS_MARKERS not in state_dict:
+            state_dict[PROGRESS_MARKERS] = {
+                PROGRESS_MARKER_NOTE: "Progress is not resumable if interrupted.",
+            }
+        progress_dict = state_dict[PROGRESS_MARKERS]
+
+        old_value = progress_dict.get("replication_key_value")
+        # ``internalDate`` is epoch milliseconds returned as a string by Gmail.
+        try:
+            new_int = int(new_value)
+            old_int = int(old_value) if old_value is not None else None
+        except (TypeError, ValueError):
+            new_int = new_value
+            old_int = old_value
+
+        if old_int is None or new_int > old_int:
+            # Cap at wall-clock "now" to guard against misdated future
+            # emails (e.g. an email with internalDate=Sep 2026 would
+            # otherwise freeze incremental sync until that date passes).
+            now_ms = int(time.time() * 1000)
+            effective_int = min(new_int, now_ms)
+            effective_value = (
+                str(effective_int) if isinstance(new_value, str) else effective_int
+            )
+            progress_dict["replication_key"] = self.replication_key
+            progress_dict["replication_key_value"] = effective_value
 
     def post_process(
         self, row: dict, context: Optional[dict] = None
