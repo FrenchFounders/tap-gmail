@@ -267,6 +267,21 @@ class MessagesStream(GmailStream):
             progress_dict["replication_key"] = self.replication_key
             progress_dict["replication_key_value"] = effective_value
 
+    def validate_response(self, response, context=None) -> None:
+        if response.status_code == 404:
+            url = response.request.url if response.request else "unknown"
+            self.logger.warning(
+                "Message not found (404) at %s — likely deleted between list and fetch; skipping.",
+                url,
+            )
+            return
+        super().validate_response(response, context)
+
+    def parse_response(self, response) -> Iterable[dict]:
+        if response.status_code == 404:
+            return
+        yield from super().parse_response(response)
+
     def post_process(
         self, row: dict, context: Optional[dict] = None
     ) -> Optional[dict]:
