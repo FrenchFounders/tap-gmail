@@ -21,6 +21,8 @@ from __future__ import annotations
 import json
 from typing import Dict, Optional, Tuple, Union
 
+import backoff
+import requests
 from singer_sdk.authenticators import OAuthJWTAuthenticator
 
 DIRECTORY_SCOPES: Tuple[str, ...] = (
@@ -41,6 +43,21 @@ def _load_service_account_info(raw: Union[str, dict]) -> dict:
         "service_account_credentials must be a JSON string or a dict, "
         f"got {type(raw)!r}"
     )
+
+
+def _is_permanent_token_error(exc: Exception) -> bool:
+    """Give up on 4xx (bad grant, unknown subject); retry 5xx, 429 and network errors."""
+    # The SDK wraps the HTTPError in a RuntimeError, or masks it with a
+    # JSONDecodeError when the 5xx body isn't JSON.
+    http_error = (
+        exc
+        if isinstance(exc, requests.HTTPError)
+        else exc.__cause__ or exc.__context__
+    )
+    if not isinstance(http_error, requests.HTTPError) or http_error.response is None:
+        return False
+    status = http_error.response.status_code
+    return status < 500 and status != 429
 
 
 class GmailAuthenticator(OAuthJWTAuthenticator):
@@ -106,3 +123,15 @@ class GmailAuthenticator(OAuthJWTAuthenticator):
         body = super().oauth_request_body
         body["sub"] = self._subject
         return body
+
+    # Token refresh runs in ``prepare_request``, outside RESTStream's
+    # backoff, so a single 5xx from Google's token endpoint kills the run.
+    @backoff.on_exception(
+        backoff.expo,
+        (RuntimeError, requests.RequestException),
+        max_tries=5,
+        factor=2,
+        giveup=_is_permanent_token_error,
+    )
+    def update_access_token(self) -> None:
+        super().update_access_token()
