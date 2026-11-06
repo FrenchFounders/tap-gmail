@@ -45,6 +45,14 @@ def _load_service_account_info(raw: Union[str, dict]) -> dict:
     )
 
 
+def _token_error_code(response: requests.Response) -> Optional[str]:
+    try:
+        body = response.json()
+    except ValueError:
+        return None
+    return body.get("error") if isinstance(body, dict) else None
+
+
 def _is_permanent_token_error(exc: Exception) -> bool:
     """Give up on 4xx (bad grant, unknown subject); retry 5xx, 429 and network errors."""
     # The SDK wraps the HTTPError in a RuntimeError, or masks it with a
@@ -57,6 +65,10 @@ def _is_permanent_token_error(exc: Exception) -> bool:
     if not isinstance(http_error, requests.HTTPError) or http_error.response is None:
         return False
     status = http_error.response.status_code
+    # Google intermittently answers 401 unauthorized_client for a random
+    # DWD subject that succeeds on the next run.
+    if status == 401 and _token_error_code(http_error.response) == "unauthorized_client":
+        return False
     return status < 500 and status != 429
 
 
